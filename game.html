@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tetris Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background: #000; /* Black background for the game canvas */
+            border: 2px solid #d4af37; /* Gold border */
+        }
+        body {
+            background: linear-gradient(to bottom, #2d2d2d, #1a1a1a); /* Dark gray gradient */
+        }
+        .gold-text {
+            color: #d4af37; /* Gold color */
+        }
+        .gold-bg {
+            background-color: #d4af37; /* Gold background */
+        }
+        .gold-bg:hover {
+            background-color: #b38e2e; /* Darker gold on hover */
+        }
+    </style>
+</head>
+<body class="text-white font-sans">
+    <div class="container mx-auto mt-10">
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <h1 class="text-4xl font-bold gold-text">Tetris Game</h1>
+            <p class="text-gray-400">Enjoy the classic Tetris game with a modern gold and gray theme!</p>
+        </header>
+
+        <!-- Main Content -->
+        <div class="flex flex-col md:flex-row justify-center items-center gap-8">
+            <!-- Game Canvas -->
+            <div class="text-center">
+                <canvas id="gameCanvas" width="300" height="600"></canvas>
+            </div>
+
+            <!-- Game Controls -->
+            <div class="bg-gray-800 p-6 rounded-lg shadow-lg">
+                <h5 class="text-center text-xl font-semibold mb-4 gold-text">Game Controls</h5>
+                <div class="text-center mb-4">
+                    <div class="text-lg font-bold">Score: <span id="score" class="gold-text">0</span></div>
+                </div>
+                <div class="flex flex-col gap-3">
+                    <button id="startButton" class="gold-bg hover:bg-gray-700 text-black py-2 px-4 rounded">Start</button>
+                    <button id="stopButton" class="bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded">Stop</button>
+                    <button id="restartButton" class="gold-bg hover:bg-gray-700 text-black py-2 px-4 rounded">Restart</button>
+                    <button id="pauseButton" class="bg-gray-600 hover:bg-gray-700 text-white py-2 px-4 rounded">Pause</button>
+                </div>
+                <div class="mt-4">
+                    <label for="speedControl" class="block text-sm font-medium text-gray-300 mb-2">Speed:</label>
+                    <input type="range" id="speedControl" class="w-full accent-gold-500" min="100" max="1000" step="100" value="1000">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const restartButton = document.getElementById('restartButton');
+        const pauseButton = document.getElementById('pauseButton');
+        const speedControl = document.getElementById('speedControl');
+
+        const SCREEN_WIDTH = 300;
+        const SCREEN_HEIGHT = 600;
+        const GRID_SIZE = 30;
+        const GRID_WIDTH = SCREEN_WIDTH / GRID_SIZE;
+        const GRID_HEIGHT = SCREEN_HEIGHT / GRID_SIZE;
+
+        const COLORS = {
+            BLACK: '#000000',
+            WHITE: '#FFFFFF',
+            GOLD: '#d4af37', /* Gold color */
+            GRAY: '#808080'
+        };
+
+        const SHAPES = [
+            [[1, 1, 1, 1]],
+            [[1, 1], [1, 1]],
+            [[0, 1, 0], [1, 1, 1]],
+            [[1, 0, 0], [1, 1, 1]],
+            [[0, 0, 1], [1, 1, 1]],
+            [[1, 1, 0], [0, 1, 1]],
+            [[0, 1, 1], [1, 1, 0]]
+        ];
+
+        const SHAPE_COLORS = ['#00FFFF', '#FFFF00', '#FF00FF', '#00FF00', '#FF0000', '#0000FF', '#FFA500']; // Original tile colors
+
+        class Tetris {
+            constructor() {
+                this.grid = Array.from({ length: GRID_HEIGHT }, () => Array(GRID_WIDTH).fill(COLORS.BLACK));
+                this.currentShape = this.getNewShape();
+                this.nextShape = this.getNewShape();
+                this.score = 0;
+                this.gameOver = false;
+                this.dropCounter = 0;
+                this.dropInterval = parseInt(speedControl.value);
+                this.lastTime = 0;
+                this.paused = false;
+                this.started = false;
+                this.init();
+            }
+
+            getNewShape() {
+                const shape = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+                const color = SHAPE_COLORS[Math.floor(Math.random() * SHAPE_COLORS.length)];
+                return { shape, color, x: Math.floor(GRID_WIDTH / 2) - Math.floor(shape[0].length / 2), y: 0 };
+            }
+
+            drawGrid() {
+                for (let y = 0; y < GRID_HEIGHT; y++) {
+                    for (let x = 0; x < GRID_WIDTH; x++) {
+                        ctx.fillStyle = this.grid[y][x];
+                        ctx.fillRect(x * GRID_SIZE, y * GRID_SIZE, GRID_SIZE, GRID_SIZE);
+                        ctx.strokeStyle = COLORS.WHITE;
+                        ctx.strokeRect(x * GRID_SIZE, y * GRID_SIZE, GRID_SIZE, GRID_SIZE);
+                    }
+                }
+            }
+
+            drawShape(shape) {
+                shape.shape.forEach((row, y) => {
+                    row.forEach((cell, x) => {
+                        if (cell) {
+                            ctx.fillStyle = shape.color;
+                            ctx.fillRect((shape.x + x) * GRID_SIZE, (shape.y + y) * GRID_SIZE, GRID_SIZE, GRID_SIZE);
+                        }
+                    });
+                });
+            }
+
+            moveShape(dx, dy) {
+                this.currentShape.x += dx;
+                this.currentShape.y += dy;
+                if (this.checkCollision()) {
+                    this.currentShape.x -= dx;
+                    this.currentShape.y -= dy;
+                    return false;
+                }
+                return true;
+            }
+
+            rotateShape() {
+                const shape = this.currentShape.shape;
+                const rotatedShape = shape[0].map((_, i) => shape.map(row => row[i])).reverse();
+                this.currentShape.shape = rotatedShape;
+                if (this.checkCollision()) {
+                    this.currentShape.shape = shape;
+                }
+            }
+
+            checkCollision() {
+                const { shape, x, y } = this.currentShape;
+                return shape.some((row, dy) => {
+                    return row.some((cell, dx) => {
+                        if (cell) {
+                            const newX = x + dx;
+                            const newY = y + dy;
+                            return (
+                                newX < 0 ||
+                                newX >= GRID_WIDTH ||
+                                newY >= GRID_HEIGHT ||
+                                this.grid[newY] && this.grid[newY][newX] !== COLORS.BLACK
+                            );
+                        }
+                        return false;
+                    });
+                });
+            }
+
+            lockShape() {
+                const { shape, x, y, color } = this.currentShape;
+                shape.forEach((row, dy) => {
+                    row.forEach((cell, dx) => {
+                        if (cell) {
+                            this.grid[y + dy][x + dx] = color;
+                        }
+                    });
+                });
+                this.clearLines();
+                this.currentShape = this.nextShape;
+                this.nextShape = this.getNewShape();
+                if (this.checkCollision()) {
+                    this.gameOver = true;
+                }
+            }
+
+            clearLines() {
+                let linesCleared = 0;
+                this.grid = this.grid.filter(row => {
+                    if (row.every(cell => cell !== COLORS.BLACK)) {
+                        linesCleared++;
+                        return false;
+                    }
+                    return true;
+                });
+                while (this.grid.length < GRID_HEIGHT) {
+                    this.grid.unshift(Array(GRID_WIDTH).fill(COLORS.BLACK));
+                }
+                this.score += linesCleared ** 2;
+                scoreElement.textContent = this.score;
+            }
+
+            init() {
+                document.addEventListener('keydown', (event) => {
+                    if (this.gameOver || this.paused || !this.started) return;
+                    switch (event.key) {
+                        case 'ArrowLeft':
+                            this.moveShape(-1, 0);
+                            break;
+                        case 'ArrowRight':
+                            this.moveShape(1, 0);
+                            break;
+                        case 'ArrowDown':
+                            this.moveShape(0, 1);
+                            break;
+                        case 'ArrowUp':
+                            this.rotateShape();
+                            break;
+                        case ' ':
+                            this.rotateShape();
+                            break;
+                    }
+                });
+
+                startButton.addEventListener('click', () => {
+                    this.start();
+                });
+
+                stopButton.addEventListener('click', () => {
+                    this.stop();
+                });
+
+                restartButton.addEventListener('click', () => {
+                    this.restart();
+                });
+
+                pauseButton.addEventListener('click', () => {
+                    this.paused = !this.paused;
+                    pauseButton.textContent = this.paused ? 'Resume' : 'Pause';
+                });
+
+                speedControl.addEventListener('input', (event) => {
+                    this.dropInterval = parseInt(event.target.value);
+                });
+
+                const gameLoop = (time = 0) => {
+                    if (this.paused || !this.started) {
+                        requestAnimationFrame(gameLoop);
+                        return;
+                    }
+
+                    const deltaTime = time - this.lastTime;
+                    this.lastTime = time;
+                    this.dropCounter += deltaTime;
+
+                    if (this.dropCounter > this.dropInterval) {
+                        if (!this.moveShape(0, 1)) {
+                            this.lockShape();
+                        }
+                        this.dropCounter = 0;
+                    }
+
+                    ctx.clearRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
+                    this.drawGrid();
+                    this.drawShape(this.currentShape);
+                    this.drawShape({ ...this.nextShape, x: GRID_WIDTH - 4, y: 1 });
+
+                    if (this.gameOver) {
+                        alert('Game Over');
+                        return;
+                    }
+
+                    requestAnimationFrame(gameLoop);
+                };
+
+                gameLoop();
+            }
+
+            start() {
+                this.started = true;
+                this.paused = false;
+                pauseButton.textContent = 'Pause';
+            }
+
+            stop() {
+                this.started = false;
+                this.paused = true;
+                pauseButton.textContent = 'Pause';
+            }
+
+            restart() {
+                this.grid = Array.from({ length: GRID_HEIGHT }, () => Array(GRID_WIDTH).fill(COLORS.BLACK));
+                this.currentShape = this.getNewShape();
+                this.nextShape = this.getNewShape();
+                this.score = 0;
+                this.gameOver = false;
+                this.dropCounter = 0;
+                this.dropInterval = parseInt(speedControl.value);
+                this.lastTime = 0;
+                this.paused = false;
+                this.started = true;
+                scoreElement.textContent = this.score;
+                pauseButton.textContent = 'Pause';
+            }
+        }
+
+        const game = new Tetris();
+    </script>
+</body>
+</html>
